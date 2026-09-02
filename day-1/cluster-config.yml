@@ -1,0 +1,11 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: linuxtips
+nodes:
+  - role: control-plane
+    extraPortMappings:  # map a port from the container to the host
+      - containerPort: 30000
+        hostPort: 30000
+        protocol: TCP
+  - role: worker
+  - role: worker
