@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run: polaris
+    app: webserver
+  name: polaris
+spec:
+  containers:
+  - image: ubuntu
+    name: ubuntu
+    args:
+      - sleep
+      - "1800"
+    resources: {}
+
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
