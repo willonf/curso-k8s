@@ -1,0 +1,23 @@
+# Config do control-plane usada no `kubeadm init --config`.
+# Serve para Flannel E Weave (mesmo podSubnet 10.244.0.0/16).
+#
+# Diferenca chave vs infra-orbstack:
+#   - As VMs do VirtualBox usam IP privado estatico (host-only 192.168.56.x).
+#   - A interface NAT (eth0) e a rota default e o kubeadm escolheria o IP NAT
+#     (10.0.2.15) se nao forcarmos o endpoint — os workers nao alcancariam.
+#   - controlPlaneEndpoint fixa o endpoint do API server no IP estatico do controlplane.
+# - cgroupDriver: systemd (combina com o containerd configurado no provision-node.sh)
+# - podSubnet: 10.244.0.0/16 (compativel com Flannel e Weave).
+#   Se for usar Calico, troque para 192.168.0.0/16.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+controlPlaneEndpoint: 192.168.56.10:6443
+apiServer:
+  certSANs:
+    - 192.168.56.10
+networking:
+  podSubnet: 10.244.0.0/16
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd

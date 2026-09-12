@@ -1,0 +1,65 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Kubernetes multi-node com KVM/libvirt + Vagrant (Linux).
+#
+# Por que libvirt/KVM em vez de VirtualBox no Linux?
+#   - KVM e o hypervisor NATIVO do kernel: muito mais performance e menos
+#     overhead que o VirtualBox.
+#   - Nao roda um "hypervisor dentro do OS" (o VirtualBox usa o proprio do kernel
+#     mesmo no Linux) — mas com libvirt a integracao e direta e as boxes sao
+#     menores. Tambem da para administrar as VMs no virt-manager.
+#
+# Requisitos (ver README.md):
+#   sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients rsync
+#   sudo systemctl enable --now libvirtd
+#   sudo usermod -aG libvirt,kvm $USER   # e relogar
+#   vagrant plugin install vagrant-libvirt
+#
+# Uso:
+#   vagrant up            # cria/provisiona controlplane, worker1, worker2
+#   vagrant provision     # reprovisiona
+#   vagrant ssh controlplane
+#   vagrant destroy -f
+#
+# Trocar a serie do Kubernetes:
+#   K8S_MINOR=v1.37 vagrant up
+
+Vagrant.configure("2") do |config|
+  # Box com build para libvirt.
+  config.vm.box = "generic/ubuntu2404"
+
+  # Série do Kubernetes no repo pkgs.k8s.io (default v1.36, igual as outras infras).
+  k8s_minor = ENV.fetch("K8S_MINOR", "v1.36")
+
+  # Subtende da rede privada isolada (inter-trafego + acesso do host).
+  subnet = "192.168.100"
+
+  # Sincronizacao via rsync (nao depende de NFS). Mante o kubeadm-config.yaml
+  # em /vagrant dentro da VM. Re-sincroniza com `vagrant reload` ou `up`.
+  config.vm.synced_folder ".", "/vagrant", type: "rsync"
+
+  nodes = {
+    "controlplane" => { ip: "#{subnet}.10", memory: 2048, cpus: 2 },
+    "worker1"      => { ip: "#{subnet}.11", memory: 2048, cpus: 2 },
+    "worker2"      => { ip: "#{subnet}.12", memory: 2048, cpus: 2 },
+  }
+
+  nodes.each do |name, cfg|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+
+      # eth0 = rede de gestão/NAT do libvirt (SSH + internet).
+      # eth1 = rede privada isolada 192.168.100.0/24 (trajeto entre os nos e com o host).
+      node.vm.network "private_network", ip: cfg[:ip]
+
+      node.vm.provider "libvirt" do |lv|
+        lv.memory = cfg[:memory]
+        lv.cpus   = cfg[:cpus]
+      end
+
+      # Provisiona o no (modulos do kernel, containerd, kubelet/kubeadm/kubectl).
+      node.vm.provision "shell", path: "provision-node.sh", env: { "K8S_MINOR" => k8s_minor }
+    end
+  end
+end

@@ -1,0 +1,53 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Kubernetes multi-node com VirtualBox + Vagrant (Windows/macOS/Linux).
+# Equivale ao cluster do infra-orbstack, mas com IPs estaticos em uma rede
+# host-only do VirtualBox (mais previsivel que o DHCP do OrbStack).
+#
+# Uso:
+#   vagrant up            # cria/provisiona as 3 VMs (controlplane, worker1, worker2)
+#   vagrant provision     # reprovisiona com o provision-node.sh
+#   vagrant destroy -f    # apaga tudo
+#
+# Trocar a serie do Kubernetes:
+#   $env:K8S_MINOR="v1.37"; vagrant up     # PowerShell
+#   K8S_MINOR=v1.37 vagrant up             # Git Bash / WSL
+
+Vagrant.configure("2") do |config|
+  # Box base: Ubuntu 24.04 com VirtualBox Guest Additions inclusas.
+  config.vm.box = "bento/ubuntu-24.04"
+
+  # Série do Kubernetes no repo pkgs.k8s.io (default v1.36, igual ao infra-orbstack).
+  k8s_minor = ENV.fetch("K8S_MINOR", "v1.36")
+
+  # Subtende da rede host-only (privada) do VirtualBox.
+  # Os IPs sao estaticos e conhecidos -> essencial p/ o kubeadm e kubectl.
+  subnet = "192.168.56"
+
+  nodes = {
+    "controlplane" => { ip: "#{subnet}.10", memory: 2048, cpus: 2 },
+    "worker1"      => { ip: "#{subnet}.11", memory: 2048, cpus: 2 },
+    "worker2"      => { ip: "#{subnet}.12", memory: 2048, cpus: 2 },
+  }
+
+  nodes.each do |name, cfg|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+
+      # eth0 = NAT (internet). eth1 = host-only privada (trajeto entre os nos).
+      node.vm.network "private_network", ip: cfg[:ip]
+
+      node.vm.provider "virtualbox" do |vb|
+        vb.name = "k8s-#{name}"
+        vb.memory = cfg[:memory]
+        vb.cpus  = cfg[:cpus]
+        vb.linked_clone = true
+      end
+
+      # Provisiona o no (modulos do kernel, containerd, kubelet/kubeadm/kubectl).
+      # O script fica sincronizado em /vagrant dentro da VM.
+      node.vm.provision "shell", path: "provision-node.sh", env: { "K8S_MINOR" => k8s_minor }
+    end
+  end
+end
